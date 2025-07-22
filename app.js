@@ -3,7 +3,10 @@ const bcrypt = require('bcrypt');
 const cors = require('cors');
 const pool = require('./db.js')
 const path = require('path');
+
+const metricsRoute = require("./routes/metrics");
 const blogRoutes = require('./routes/blogRoutes'); 
+require('./scheduler'); // start the cron job
 
 require('dotenv').config();
 const app = express();
@@ -14,7 +17,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api/blogs', blogRoutes);
-
+app.use('/api', metricsRoute);
 app.post('/newUser', async(req , res) => {
    const { 
     email,
