@@ -9,19 +9,3 @@ services:
       - ./uploads:/app/uploads
     env_file:
       - .env
-    depends_on:
-      - db
-
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: dex
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: teja1234
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
-volumes:
-  pgdata:
