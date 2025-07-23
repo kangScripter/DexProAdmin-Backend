@@ -128,5 +128,26 @@ router.get('/:slug', async (req, res) => {
   }
 });
 
+/**
+ * @route GET /api/blogs
+ * @desc Get all blogs
+ */
+router.get('/', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM blogs ORDER BY created_at DESC');
+    const serverUrl = `${req.protocol}://${req.get('host')}`;
+    // Add full URL to featured_image for each blog
+    const blogs = result.rows.map(blog => {
+      if (blog.featured_image) {
+        blog.featured_image = `${serverUrl}${blog.featured_image}`;
+      }
+      return blog;
+    });
+    res.json({ blogs });
+  } catch (error) {
+    console.error('Error fetching blogs:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 module.exports = router;
