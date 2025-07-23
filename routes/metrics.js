@@ -54,4 +54,40 @@ router.get('/featured', async (req, res) => {
   }
 });
 
+
+/**
+ * @route GET /api/categories
+ * @desc Get all unique blog categories
+ */
+router.get('/categories', async (req, res) => {
+  try {
+    const result = await pool.query("SELECT DISTINCT category FROM blogs WHERE category IS NOT NULL AND category <> ''" );
+    const categories = result.rows.map(row => row.category);
+    res.json({ categories });
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * @route GET /api/categories/with-count
+ * @desc Get all categories and the number of posts associated with each
+ */
+router.get('/categories/with-count', async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT category, COUNT(*) AS post_count
+      FROM blogs
+      WHERE category IS NOT NULL AND category <> ''
+      GROUP BY category
+      ORDER BY post_count DESC;
+    `);
+    res.json({ categories: result.rows });
+  } catch (error) {
+    console.error('Error fetching categories with count:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 module.exports = router;

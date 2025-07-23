@@ -115,13 +115,43 @@ router.get('/:slug', async (req, res) => {
 
     const blog = result.rows[0];
 
+    // Find the next blog by published_at (or created_at if not present)
+    let nextBlog = null;
+    let prevBlog = null;
+    if (blog.published_at) {
+      // Next blog
+      const nextResult = await pool.query(
+        'SELECT * FROM blogs WHERE published_at > $1 ORDER BY published_at ASC LIMIT 1',
+        [blog.published_at]
+      );
+      if (nextResult.rows.length > 0) {
+        nextBlog = nextResult.rows[0];
+        if (nextBlog.featured_image) {
+          const serverUrl = `${req.protocol}://${req.get('host')}`;
+          nextBlog.featured_image = `${serverUrl}${nextBlog.featured_image}`;
+        }
+      }
+      // Previous blog
+      const prevResult = await pool.query(
+        'SELECT * FROM blogs WHERE published_at < $1 ORDER BY published_at DESC LIMIT 1',
+        [blog.published_at]
+      );
+      if (prevResult.rows.length > 0) {
+        prevBlog = prevResult.rows[0];
+        if (prevBlog.featured_image) {
+          const serverUrl = `${req.protocol}://${req.get('host')}`;
+          prevBlog.featured_image = `${serverUrl}${prevBlog.featured_image}`;
+        }
+      }
+    }
+
     // Append full URL to featured_image
     if (blog.featured_image) {
       const serverUrl = `${req.protocol}://${req.get('host')}`;
       blog.featured_image = `${serverUrl}${blog.featured_image}`;
     }
 
-    res.json({ blog });
+    res.json({ blog, prevBlog, nextBlog });
   } catch (error) {
     console.error('Error fetching blog:', error);
     res.status(500).json({ message: 'Server error' });
@@ -149,5 +179,6 @@ router.get('/', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 
 module.exports = router;
