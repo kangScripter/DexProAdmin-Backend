@@ -4,6 +4,7 @@ const cors = require('cors');
 const pool = require('./db.js')
 const path = require('path');
 const multer = require('multer');
+const fs = require('fs');
 
 const metricsRoute = require("./routes/metrics");
 const blogRoutes = require('./routes/blogRoutes'); 
@@ -115,6 +116,11 @@ app.post('/validatePassword', async(req, res) => {
 
     }
 })
+
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
