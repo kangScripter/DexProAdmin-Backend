@@ -8,6 +8,7 @@ const fs = require('fs');
 
 const metricsRoute = require("./routes/metrics");
 const blogRoutes = require('./routes/blogRoutes'); 
+const newsletterRoutes = require('./routes/newsletter');
 require('./scheduler'); // start the cron job
 
 require('dotenv').config();
@@ -32,6 +33,7 @@ const upload = multer({ storage });
 
 app.use('/api/blogs', blogRoutes);
 app.use('/api', metricsRoute);
+app.use('/api', newsletterRoutes);
 app.post('/newUser', upload.single('profile_pic'), async(req , res) => {
    const { 
     email,

@@ -10,7 +10,7 @@ router.get("/metrics", async (req, res) => {
       client.query("SELECT COUNT(*) FROM blogs"),
       client.query("SELECT COUNT(*) FROM leads"),
       client.query("SELECT COUNT(*) FROM newsletter_subscribers"),
-      client.query("SELECT COALESCE(SUM(views), 0) FROM blogs")
+      client.query("SELECT COALESCE(SUM(views_count), 0) FROM blogs")
     ]);
 
     client.release();
