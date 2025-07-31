@@ -6,6 +6,8 @@ const path = require('path');
 const multer = require('multer');
 const fs = require('fs');
 const ebook = require('./routes/ebooks.js')
+const jobRoute = require('./routes/jobRoute.js')
+const applicantRoute = require('./routes/applicantRoutes.js')
 
 const metricsRoute = require("./routes/metrics");
 const blogRoutes = require('./routes/blogRoutes'); 
@@ -32,6 +34,8 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+app.use('/job', jobRoute);
+app.use('/applicant', applicantRoute);
 app.use('/ebook', ebook)
 app.use('/api/blogs', blogRoutes);
 app.use('/api', metricsRoute);
