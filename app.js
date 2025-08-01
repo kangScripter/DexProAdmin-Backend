@@ -3,7 +3,16 @@ const bcrypt = require('bcrypt');
 const cors = require('cors');
 const pool = require('./db.js')
 const path = require('path');
+const multer = require('multer');
+const fs = require('fs');
+const ebook = require('./routes/ebooks.js')
+const jobRoute = require('./routes/jobRoute.js')
+const applicantRoute = require('./routes/applicantRoutes.js')
+
+const metricsRoute = require("./routes/metrics");
 const blogRoutes = require('./routes/blogRoutes'); 
+const newsletterRoutes = require('./routes/newsletter');
+require('./scheduler'); // start the cron job
 
 require('dotenv').config();
 const app = express();
@@ -13,9 +22,25 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.use('/api/blogs', blogRoutes);
+// Configure multer for file upload
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = Date.now() + '-' + file.originalname;
+    cb(null, uniqueName);
+  },
+});
+const upload = multer({ storage });
 
-app.post('/newUser', async(req , res) => {
+app.use('/job', jobRoute);
+app.use('/applicant', applicantRoute);
+app.use('/ebook', ebook)
+app.use('/api/blogs', blogRoutes);
+app.use('/api', metricsRoute);
+app.use('/api', newsletterRoutes);
+app.post('/newUser', upload.single('profile_pic'), async(req , res) => {
    const { 
     email,
     password,
@@ -23,14 +48,15 @@ app.post('/newUser', async(req , res) => {
     first_name,
     last_name,
     role,
-    gender,
+    gender
     } = req.body;
-   
+   // Get profile_pic path if uploaded
+   const profilePicPath = req.file ? `/uploads/${req.file.filename}` : null;
    const hashedPassword = await bcrypt.hash(password, 10);
    try {
     const query = `
-            INSERT INTO users (email ,password, phone, first_name, last_name, role, gender)
-            VALUES ($1 , $2, $3, $4, $5, $6, $7)
+            INSERT INTO users (email ,password, phone, first_name, last_name, role, gender, profile_pic)
+            VALUES ($1 , $2, $3, $4, $5, $6, $7, $8)
             RETURNING *;
     `
     const values = [
@@ -40,7 +66,8 @@ app.post('/newUser', async(req , res) => {
         first_name,
         last_name,
         role,
-        gender
+        gender,
+        profilePicPath
     ]
     const result = await pool.query(query, values)
     res.status(201).json({message: 'Sudo Access granted', data: result.rows[0]})
@@ -97,6 +124,11 @@ app.post('/validatePassword', async(req, res) => {
 
     }
 })
+
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
