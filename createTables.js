@@ -64,14 +64,31 @@ async function createTables() {
         UNIQUE(job_id, phone)
       );
     `);
-await pool.query(`
-    ALTER TABLE applicants DROP CONSTRAINT applicants_status_check;
-
-    ALTER TABLE applicants
-    ADD CONSTRAINT applicants_status_check 
-    CHECK (LOWER(status) IN ('new', 'reviewed', 'shortlisted', 'rejected', 'interviewed'));
-
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS services (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL UNIQUE,
+        sub_services TEXT[] NOT NULL DEFAULT '{}',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
     `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS project_requirements (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        username TEXT,
+        email TEXT,
+        phone TEXT,
+        address TEXT,
+        selectedServices TEXT[] NOT NULL DEFAULT '{}',
+        selectedSubServices JSONB NOT NULL DEFAULT '{}'::jsonb,
+        projectTimeline TEXT,
+        additionalRequirements TEXT,
+        keepUpdated BOOLEAN,
+        budgetRange NUMERIC,
+        submittedAt TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);        
 
     console.log('Tables created successfully!');
   } catch (error) {

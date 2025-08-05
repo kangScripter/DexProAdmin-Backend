@@ -8,6 +8,9 @@ const fs = require('fs');
 const ebook = require('./routes/ebooks.js')
 const jobRoute = require('./routes/jobRoute.js')
 const applicantRoute = require('./routes/applicantRoutes.js')
+const serviceRoute = require('./routes/serviceRoutes.js')
+const projectRequirementRoutes = require("./routes/projectRequirementRoutes.js");
+
 
 
 const metricsRoute = require("./routes/metrics");
@@ -37,6 +40,8 @@ const upload = multer({ storage });
 app.use('/job', jobRoute);
 app.use('/applicant', applicantRoute);
 app.use('/ebook', ebook)
+app.use('/services', serviceRoute);
+app.use("/project-requirements", projectRequirementRoutes);
 app.use('/api/blogs', blogRoutes);
 app.use('/api', metricsRoute);
 app.post('/newUser', upload.single('profile_pic'), async(req , res) => {
