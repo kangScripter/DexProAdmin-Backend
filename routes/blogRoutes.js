@@ -100,10 +100,9 @@ router.post('/', upload.single('featured_image'), async (req, res) => {
   }
 });
 
-/**
- * @route GET /api/blogs/:id
- * @desc Get blog by ID
- */
+// Reorder routes to prevent endpoint clashes
+
+// Specific route to get blog by slug
 router.get('/:slug', async (req, res) => {
   const { slug } = req.params;
   try {
@@ -122,8 +121,10 @@ router.get('/:slug', async (req, res) => {
     if (dateField) {
       // Next blog
       const nextResult = await pool.query(
-        'SELECT * FROM blogs WHERE (published_at > $1 OR (published_at IS NULL AND created_at > $1)) ORDER BY COALESCE(published_at, created_at) ASC LIMIT 1',
-        [dateField]
+        `SELECT * FROM blogs 
+         WHERE slug != $2 AND (COALESCE(published_at, created_at) > $1)
+         ORDER BY COALESCE(published_at, created_at) ASC LIMIT 1`,
+        [dateField, blog.slug]
       );
       if (nextResult.rows.length > 0) {
         nextBlog = nextResult.rows[0];
@@ -134,8 +135,10 @@ router.get('/:slug', async (req, res) => {
       }
       // Previous blog
       const prevResult = await pool.query(
-        'SELECT * FROM blogs WHERE (published_at < $1 OR (published_at IS NULL AND created_at < $1)) ORDER BY COALESCE(published_at, created_at) DESC LIMIT 1',
-        [dateField]
+        `SELECT * FROM blogs 
+         WHERE slug != $2 AND (COALESCE(published_at, created_at) < $1)
+         ORDER BY COALESCE(published_at, created_at) DESC LIMIT 1`,
+        [dateField, blog.slug]
       );
       if (prevResult.rows.length > 0) {
         prevBlog = prevResult.rows[0];
@@ -159,16 +162,19 @@ router.get('/:slug', async (req, res) => {
   }
 });
 
-/**
- * @route GET /api/blogs
- * @desc Get all blogs
- */
+// Specific route to get all blogs
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM blogs ORDER BY created_at DESC');
     const serverUrl = `${req.protocol}://${req.get('host')}`;
     // Add full URL to featured_image for each blog
     const blogs = result.rows.map(blog => {
+      if (blog.author_id) {
+        blog.author = {
+          id: blog.author_id,
+          name: () => {}, // Replace with actual author name if available
+        };
+      }
       if (blog.featured_image) {
         blog.featured_image = `${serverUrl}${blog.featured_image}`;
       }
@@ -181,5 +187,45 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Delete a blog by ID
+router.delete('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query('DELETE FROM blogs WHERE id = $1 RETURNING *', [id]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Blog not found' });
+    }
+    res.json({ message: 'Blog deleted successfully', blog: result.rows[0] });
+  } catch (error) {
+    console.error('Error deleting blog:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Delete by slug
+router.delete('/slug/:slug', async (req, res) => {
+  const { slug } = req.params;
+  try {
+    const result = await pool.query('DELETE FROM blogs WHERE slug = $1 RETURNING *', [slug]);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Blog not found' });
+    }
+    res.json({ message: 'Blog deleted successfully', blog: result.rows[0] });
+  } catch (error) {
+    console.error('Error deleting blog by slug:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Delete all blogs
+router.delete('/', async (req, res) => {
+  try {
+    const result = await pool.query('DELETE FROM blogs RETURNING *');
+    res.json({ message: 'All blogs deleted successfully', count: result.rowCount });
+  } catch (error) {
+    console.error('Error deleting all blogs:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 module.exports = router;
