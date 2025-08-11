@@ -228,4 +228,82 @@ router.delete('/', async (req, res) => {
   }
 });
 
+// Update a blog by slug
+router.put('/:slug', upload.single('featured_image'), async (req, res) => {
+  const { slug } = req.params;
+  const {
+    title,
+    short_desc,
+    content,
+    status,
+    scheduled_time,
+    published_at,
+    category,
+    author_id,
+    tags,
+    seo_title,
+    seo_description,
+    seo_keywords,
+    canonical_url,
+    views_count,
+    likes_count,
+    is_featured,
+    is_pinned,
+    is_deleted,
+    visibility
+  } = req.body;
+
+  let featuredImagePath = null;
+  if (req.file) {
+    featuredImagePath = `/uploads/${req.file.filename}`;
+  }
+
+  try {
+    let updateFields = [];
+    let values = [];
+    let idx = 1;
+
+    if (title) { updateFields.push(`title = $${idx++}`); values.push(title); }
+    if (short_desc) { updateFields.push(`short_desc = $${idx++}`); values.push(short_desc); }
+    if (content) { updateFields.push(`content = $${idx++}`); values.push(content); }
+    if (status) { updateFields.push(`status = $${idx++}`); values.push(status); }
+    if (scheduled_time) { updateFields.push(`scheduled_time = $${idx++}`); values.push(scheduled_time); }
+    if (published_at) { updateFields.push(`published_at = $${idx++}`); values.push(published_at); }
+    if (category) { updateFields.push(`category = $${idx++}`); values.push(category); }
+    if (author_id) { updateFields.push(`author_id = $${idx++}`); values.push(author_id); }
+    if (tags) { updateFields.push(`tags = $${idx++}`); values.push(tags.split(',').map(tag => tag.trim())); }
+    if (seo_title) { updateFields.push(`seo_title = $${idx++}`); values.push(seo_title); }
+    if (seo_description) { updateFields.push(`seo_description = $${idx++}`); values.push(seo_description); }
+    if (seo_keywords) { updateFields.push(`seo_keywords = $${idx++}`); values.push(seo_keywords.split(',').map(k => k.trim())); }
+    if (canonical_url) { updateFields.push(`canonical_url = $${idx++}`); values.push(canonical_url); }
+    if (views_count) { updateFields.push(`views_count = $${idx++}`); values.push(views_count); }
+    if (likes_count) { updateFields.push(`likes_count = $${idx++}`); values.push(likes_count); }
+    if (is_featured !== undefined) { updateFields.push(`is_featured = $${idx++}`); values.push(is_featured === 'true' || is_featured === true); }
+    if (is_pinned !== undefined) { updateFields.push(`is_pinned = $${idx++}`); values.push(is_pinned === 'true' || is_pinned === true); }
+    if (is_deleted !== undefined) { updateFields.push(`is_deleted = $${idx++}`); values.push(is_deleted === 'true' || is_deleted === true); }
+    if (visibility) { updateFields.push(`visibility = $${idx++}`); values.push(visibility); }
+    if (featuredImagePath) { updateFields.push(`featured_image = $${idx++}`); values.push(featuredImagePath); }
+    updateFields.push(`updated_at = NOW()`);
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ message: 'No fields to update' });
+    }
+
+    values.push(slug);
+    const query = `UPDATE blogs SET ${updateFields.join(', ')} WHERE slug = $${idx} RETURNING *`;
+    const result = await pool.query(query, values);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Blog not found' });
+    }
+    let blog = result.rows[0];
+    if (blog.featured_image) {
+      blog.featured_image = `${req.protocol}://${req.get('host')}${blog.featured_image}`;
+    }
+    res.status(200).json({ message: 'Blog updated successfully', blog });
+  } catch (error) {
+    console.error('Error updating blog:', error);
+    res.status(500).json({ message: 'Failed to update blog' });
+  }
+});
+
 module.exports = router;
