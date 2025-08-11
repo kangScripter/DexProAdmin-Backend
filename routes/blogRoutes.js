@@ -115,14 +115,15 @@ router.get('/:slug', async (req, res) => {
 
     const blog = result.rows[0];
 
-    // Find the next blog by published_at (or created_at if not present)
+    // Find the next and previous blog by published_at or created_at
     let nextBlog = null;
     let prevBlog = null;
-    if (blog.published_at) {
+    const dateField = blog.published_at || blog.created_at;
+    if (dateField) {
       // Next blog
       const nextResult = await pool.query(
-        'SELECT * FROM blogs WHERE published_at > $1 ORDER BY published_at ASC LIMIT 1',
-        [blog.published_at]
+        'SELECT * FROM blogs WHERE (published_at > $1 OR (published_at IS NULL AND created_at > $1)) ORDER BY COALESCE(published_at, created_at) ASC LIMIT 1',
+        [dateField]
       );
       if (nextResult.rows.length > 0) {
         nextBlog = nextResult.rows[0];
@@ -133,8 +134,8 @@ router.get('/:slug', async (req, res) => {
       }
       // Previous blog
       const prevResult = await pool.query(
-        'SELECT * FROM blogs WHERE published_at < $1 ORDER BY published_at DESC LIMIT 1',
-        [blog.published_at]
+        'SELECT * FROM blogs WHERE (published_at < $1 OR (published_at IS NULL AND created_at < $1)) ORDER BY COALESCE(published_at, created_at) DESC LIMIT 1',
+        [dateField]
       );
       if (prevResult.rows.length > 0) {
         prevBlog = prevResult.rows[0];

@@ -64,6 +64,7 @@ async function createTables() {
         UNIQUE(job_id, phone)
       );
     `);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS services (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -89,6 +90,15 @@ async function createTables() {
         submittedAt TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);        
+=======
+        await pool.query(`
+ALTER TABLE applicants DROP CONSTRAINT applicants_status_check;
+
+ALTER TABLE applicants
+ADD CONSTRAINT applicants_status_check 
+CHECK (status IN ('New', 'Reviewed', 'Shortlisted', 'Rejected', 'Interviewed'));
+
+    `);
 
     console.log('Tables created successfully!');
   } catch (error) {
@@ -99,3 +109,4 @@ async function createTables() {
 }
 
 createTables();
+
