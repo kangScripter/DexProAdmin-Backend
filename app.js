@@ -125,6 +125,36 @@ app.post('/validatePassword', async(req, res) => {
     }
 })
 
+// Delete user by ID
+app.delete('/deleteUser/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING *', [id]);
+    res.status(200).json({ message: 'User deleted successfully', user: result.rows[0] });
+  if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+  }catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+ 
+})
+
+//   Get all users
+app.get('/getAllUsers', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM users');
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'No users found' });
+    }
+    res.status(200).json({ message: 'Users fetched successfully', data: result.rows });
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
