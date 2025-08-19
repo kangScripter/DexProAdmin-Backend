@@ -3,6 +3,8 @@ const router = express.Router();
 const multer = require('multer');
 const pool = require('../db');
 const path = require('path');
+const axios = require('axios');
+const FormData = require('form-data');
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -15,6 +17,14 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
+
+// Helper to format media URLs
+function formatMediaUrl(url) {
+  if (!url) return url;
+  if (!url.startsWith('http')) return url;
+  if (url.startsWith('http://')) return url.replace('http://', 'https://');
+  return url;
+}
 
 /**
  * @route POST /api/blogs
@@ -45,16 +55,30 @@ router.post('/', upload.single('featured_image'), async (req, res) => {
       visibility,
     } = req.body;
 
-    const featuredImagePath = req.file ? `/uploads/${req.file.filename}` : null;
+    let featuredImageUrl = null;
+    if (req.file) {
+      try {
+        const form = new FormData();
+        form.append('file', require('fs').createReadStream(req.file.path), req.file.originalname);
+        const uploadRes = await axios.post('https://media.dexprosolutions.com/media/upload', form, {
+          headers: form.getHeaders(),
+        });
+        if (uploadRes.data && uploadRes.data.success && uploadRes.data.file && uploadRes.data.file.url) {
+          featuredImageUrl = uploadRes.data.file.url;
+        }
+      } catch (uploadErr) {
+        console.error('Error uploading featured image:', uploadErr);
+        return res.status(500).json({ success: false, error: 'Failed to upload featured image', company: 'DexPro' });
+      }
+    }
 
     const tagsArray = tags ? tags.split(',').map(tag => tag.trim()) : [];
     const seoKeywordsArray = seo_keywords ? seo_keywords.split(',').map(k => k.trim()) : [];
 
     const result = await pool.query(
       `INSERT INTO blogs (
-        title, slug, short_desc, content
-        
-        , featured_image, category, author_id,
+        title, slug, short_desc, content,
+        featured_image, category, author_id,
         seo_title, seo_description, seo_keywords, canonical_url, tags,
         status, scheduled_time, published_at,
         created_at, updated_at,
@@ -73,7 +97,7 @@ router.post('/', upload.single('featured_image'), async (req, res) => {
         slug,
         short_desc,
         content,
-        featuredImagePath,
+        featuredImageUrl,
         category,
         author_id,
         seo_title,
@@ -93,7 +117,13 @@ router.post('/', upload.single('featured_image'), async (req, res) => {
       ]
     );
 
-    res.status(201).json({ success: true, blog: result.rows[0] });
+    if (result.rows.length > 0) {
+      let blog = result.rows[0];
+      blog.featured_image = formatMediaUrl(blog.featured_image);
+      res.status(201).json({ success: true, blog });
+    } else {
+      res.status(500).json({ success: false, message: 'Failed to create blog' });
+    }
   } catch (err) {
     console.error('Error inserting blog:', err);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -150,11 +180,22 @@ router.get('/:slug', async (req, res) => {
     }
 
     // Append full URL to featured_image
-    if (blog.featured_image) {
+    if (blog.featured_image && !blog.featured_image.startsWith('http')) {
       const serverUrl = `${req.protocol}://${req.get('host')}`;
       blog.featured_image = `${serverUrl}${blog.featured_image}`;
     }
-
+    if (blog.featured_image && blog.featured_image.startsWith('http://')) {
+      blog.featured_image = blog.featured_image.replace('http://', 'https://');
+    }
+    if (blog.featured_image) {
+      blog.featured_image = formatMediaUrl(blog.featured_image);
+    }
+    if (prevBlog && prevBlog.featured_image) {
+      prevBlog.featured_image = formatMediaUrl(prevBlog.featured_image);
+    }
+    if (nextBlog && nextBlog.featured_image) {
+      nextBlog.featured_image = formatMediaUrl(nextBlog.featured_image);
+    }
     res.json({ blog, prevBlog, nextBlog });
   } catch (error) {
     console.error('Error fetching blog:', error);
@@ -169,14 +210,8 @@ router.get('/', async (req, res) => {
     const serverUrl = `${req.protocol}://${req.get('host')}`;
     // Add full URL to featured_image for each blog
     const blogs = result.rows.map(blog => {
-      if (blog.author_id) {
-        blog.author = {
-          id: blog.author_id,
-          name: () => {}, // Replace with actual author name if available
-        };
-      }
       if (blog.featured_image) {
-        blog.featured_image = `${serverUrl}${blog.featured_image}`;
+        blog.featured_image = formatMediaUrl(blog.featured_image);
       }
       return blog;
     });
@@ -195,7 +230,9 @@ router.delete('/:id', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Blog not found' });
     }
-    res.json({ message: 'Blog deleted successfully', blog: result.rows[0] });
+    let blog = result.rows[0];
+    blog.featured_image = formatMediaUrl(blog.featured_image);
+    res.json({ message: 'Blog deleted successfully', blog });
   } catch (error) {
     console.error('Error deleting blog:', error);
     res.status(500).json({ message: 'Server error' });
@@ -210,7 +247,9 @@ router.delete('/slug/:slug', async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ message: 'Blog not found' });
     }
-    res.json({ message: 'Blog deleted successfully', blog: result.rows[0] });
+    let blog = result.rows[0];
+    blog.featured_image = formatMediaUrl(blog.featured_image);
+    res.json({ message: 'Blog deleted successfully', blog });
   } catch (error) {
     console.error('Error deleting blog by slug:', error);
     res.status(500).json({ message: 'Server error' });
@@ -253,9 +292,21 @@ router.put('/:slug', upload.single('featured_image'), async (req, res) => {
     visibility
   } = req.body;
 
-  let featuredImagePath = null;
+  let featuredImageUrl = null;
   if (req.file) {
-    featuredImagePath = `/uploads/${req.file.filename}`;
+    try {
+      const form = new FormData();
+      form.append('file', require('fs').createReadStream(req.file.path), req.file.originalname);
+      const uploadRes = await axios.post('https://media.dexprosolutions.com/media/upload', form, {
+        headers: form.getHeaders(),
+      });
+      if (uploadRes.data && uploadRes.data.success && uploadRes.data.file && uploadRes.data.file.url) {
+        featuredImageUrl = uploadRes.data.file.url;
+      }
+    } catch (uploadErr) {
+      console.error('Error uploading featured image:', uploadErr);
+      return res.status(500).json({ success: false, error: 'Failed to upload featured image', company: 'DexPro' });
+    }
   }
 
   try {
@@ -282,7 +333,7 @@ router.put('/:slug', upload.single('featured_image'), async (req, res) => {
     if (is_pinned !== undefined) { updateFields.push(`is_pinned = $${idx++}`); values.push(is_pinned === 'true' || is_pinned === true); }
     if (is_deleted !== undefined) { updateFields.push(`is_deleted = $${idx++}`); values.push(is_deleted === 'true' || is_deleted === true); }
     if (visibility) { updateFields.push(`visibility = $${idx++}`); values.push(visibility); }
-    if (featuredImagePath) { updateFields.push(`featured_image = $${idx++}`); values.push(featuredImagePath); }
+    if (featuredImageUrl) { updateFields.push(`featured_image = $${idx++}`); values.push(featuredImageUrl); }
     updateFields.push(`updated_at = NOW()`);
 
     if (updateFields.length === 0) {
@@ -296,9 +347,7 @@ router.put('/:slug', upload.single('featured_image'), async (req, res) => {
       return res.status(404).json({ message: 'Blog not found' });
     }
     let blog = result.rows[0];
-    if (blog.featured_image) {
-      blog.featured_image = `${req.protocol}://${req.get('host')}${blog.featured_image}`;
-    }
+    blog.featured_image = formatMediaUrl(blog.featured_image);
     res.status(200).json({ message: 'Blog updated successfully', blog });
   } catch (error) {
     console.error('Error updating blog:', error);
