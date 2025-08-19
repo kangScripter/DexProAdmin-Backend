@@ -8,7 +8,11 @@ const fs = require('fs');
 const ebook = require('./routes/ebooks.js')
 const axios = require('axios');
 const FormData = require('form-data');
+const jobRoute = require('./routes/jobRoute.js')
+const applicantRoute = require('./routes/applicantRoutes.js')
 
+const serviceRoute = require('./routes/serviceRoutes.js')
+const projectRequirementRoutes = require("./routes/projectRequirementRoutes.js");
 const metricsRoute = require("./routes/metrics");
 const blogRoutes = require('./routes/blogRoutes'); 
 const newsletterRoutes = require('./routes/newsletter');
@@ -38,7 +42,11 @@ const mediaStorage = multer.diskStorage({
 });
 const mediaUpload = multer({ storage: mediaStorage });
 
+app.use('/job', jobRoute);
+app.use('/applicant', applicantRoute);
 app.use('/ebook', ebook)
+app.use('/services', serviceRoute);
+app.use("/project-requirements", projectRequirementRoutes);
 app.use('/api/blogs', blogRoutes);
 app.use('/api', metricsRoute);
 app.use('/api', newsletterRoutes);
