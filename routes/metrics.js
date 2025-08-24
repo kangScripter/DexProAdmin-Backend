@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const { formatMediaUrl } = require('../utils/mediaUpload');
 
 router.get("/metrics", async (req, res) => {
   try {
@@ -29,7 +30,6 @@ router.get("/metrics", async (req, res) => {
 
 router.get('/featured', async (req, res) => {
   try {
-    const serverUrl = `${req.protocol}://${req.get('host')}`;
     const result = await pool.query(
       `SELECT * FROM blogs 
        WHERE is_featured = true AND (is_deleted IS NULL OR is_deleted = false)
@@ -39,9 +39,7 @@ router.get('/featured', async (req, res) => {
 
     const blogs = result.rows.map((blog) => ({
       ...blog,
-      featured_image: blog.featured_image
-        ? `${serverUrl}${blog.featured_image}`
-        : null,
+      featured_image: blog.featured_image ? formatMediaUrl(blog.featured_image) : null,
     }));
 
     res.json({

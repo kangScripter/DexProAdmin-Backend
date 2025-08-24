@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db'); // PostgreSQL pool
-const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 
 const upload = multer();
@@ -20,21 +19,29 @@ router.post('/save', upload.none(), async (req, res) => {
       status = 'open'
     } = req.body;
 
-    const jobId = uuidv4();
+    // Validate required fields
+    if (!title || !location || !type || !description) {
+      return res.status(400).json({ 
+        error: 'Title, location, type, and description are required' 
+      });
+    }
+
+    // Convert skills and requirements to arrays if they're strings
+    const skillsArray = Array.isArray(skills) ? skills : (skills ? skills.split(',').map(s => s.trim()) : []);
+    const requirementsArray = Array.isArray(requirements) ? requirements : (requirements ? requirements.split(',').map(r => r.trim()) : []);
 
     const result = await pool.query(
       `INSERT INTO jobs 
-      (id, title, location, type, description, skills, requirements, compensation, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      (title, location, type, description, skills, requirements, compensation, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *`,
       [
-        jobId,
         title,
         location,
         type,
         description,
-        skills,
-        requirements,
+        skillsArray,
+        requirementsArray,
         compensation || null,
         status
       ]

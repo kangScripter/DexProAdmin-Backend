@@ -5,7 +5,7 @@ const pool = require('../db'); // <-- pool, not db
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { validate: isUuid } = require('uuid');
+const { formatMediaUrl, uploadSingleFile } = require('../utils/mediaUpload');
 
 // Ensure uploads folder exists
 const uploadPath = path.join(__dirname, '../uploads/');
@@ -38,18 +38,40 @@ router.post('/save', upload.fields([{ name: 'image' }, { name: 'pdf_file' }]), a
       return res.status(400).json({ error: 'Both image and pdf_file are required.' });
     }
 
-    const image = req.files['image'][0].filename;
-    const pdf_file = req.files['pdf_file'][0].filename;
+    let imageUrl = null;
+    let pdfUrl = null;
+
+    // Upload image to media service
+    try {
+      imageUrl = await uploadSingleFile(req.files['image'][0], 'image');
+    } catch (uploadErr) {
+      console.error('Error uploading image:', uploadErr);
+      return res.status(500).json({ success: false, error: 'Failed to upload image', company: 'DexPro' });
+    }
+
+    // Upload PDF to media service
+    try {
+      pdfUrl = await uploadSingleFile(req.files['pdf_file'][0], 'pdf_file');
+    } catch (uploadErr) {
+      console.error('Error uploading PDF:', uploadErr);
+      return res.status(500).json({ success: false, error: 'Failed to upload PDF', company: 'DexPro' });
+    }
+
     const parsedHighlights = parseHighlights(highlights);
 
     const { rows } = await pool.query(
       `INSERT INTO ebooks (title, description, highlights, image, pdf_file)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [title, description || null, parsedHighlights, image, pdf_file]
+      [title, description || null, parsedHighlights, imageUrl, pdfUrl]
     );
 
-    res.status(201).json(rows[0]);
+    // Format media URLs in response
+    let book = rows[0];
+    book.image = formatMediaUrl(book.image);
+    book.pdf_file = formatMediaUrl(book.pdf_file);
+
+    res.status(201).json(book);
   } catch (err) {
     console.error('Error while saving book:', err);
     res.status(500).json({ error: err.message });
@@ -62,7 +84,19 @@ router.get('/get', async (_req, res) => {
     const { rows } = await pool.query(
       'SELECT * FROM ebooks ORDER BY created_at DESC'
     );
-    res.json(rows);
+    
+    // Format media URLs for all books
+    const books = rows.map(book => {
+      if (book.image) {
+        book.image = formatMediaUrl(book.image);
+      }
+      if (book.pdf_file) {
+        book.pdf_file = formatMediaUrl(book.pdf_file);
+      }
+      return book;
+    });
+    
+    res.json(books);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -71,10 +105,11 @@ router.get('/get', async (_req, res) => {
 // ---------- UPDATE (By ID)
 router.put('/update/:id', upload.fields([{ name: 'image' }, { name: 'pdf_file' }]), async (req, res) => {
   const { id } = req.params;
-  if (!isUuid(id)) return res.status(400).json({ message: 'Invalid book id' });
+  const bookId = parseInt(id);
+  if (isNaN(bookId) || bookId <= 0) return res.status(400).json({ message: 'Invalid book id' });
 
   try {
-    const { rows: existingRows } = await pool.query('SELECT * FROM ebooks WHERE id = $1', [id]);
+    const { rows: existingRows } = await pool.query('SELECT * FROM ebooks WHERE id = $1', [bookId]);
     if (existingRows.length === 0) return res.status(404).json({ message: 'Book not found' });
     const book = existingRows[0];
 
@@ -86,22 +121,24 @@ router.put('/update/:id', upload.fields([{ name: 'image' }, { name: 'pdf_file' }
 
     if (highlights !== undefined) parsedHighlights = parseHighlights(highlights);
 
+    // Handle image upload
     if (req.files && req.files['image'] && req.files['image'][0]) {
-      const newImage = req.files['image'][0].filename;
-      if (image) {
-        const oldImagePath = path.join(uploadPath, image);
-        if (fs.existsSync(oldImagePath)) fs.unlinkSync(oldImagePath);
+      try {
+        image = await uploadSingleFile(req.files['image'][0], 'image');
+      } catch (uploadErr) {
+        console.error('Error uploading image:', uploadErr);
+        return res.status(500).json({ success: false, error: 'Failed to upload image', company: 'DexPro' });
       }
-      image = newImage;
     }
 
+    // Handle PDF upload
     if (req.files && req.files['pdf_file'] && req.files['pdf_file'][0]) {
-      const newPdf = req.files['pdf_file'][0].filename;
-      if (pdf_file) {
-        const oldPdfPath = path.join(uploadPath, pdf_file);
-        if (fs.existsSync(oldPdfPath)) fs.unlinkSync(oldPdfPath);
+      try {
+        pdf_file = await uploadSingleFile(req.files['pdf_file'][0], 'pdf_file');
+      } catch (uploadErr) {
+        console.error('Error uploading PDF:', uploadErr);
+        return res.status(500).json({ success: false, error: 'Failed to upload PDF', company: 'DexPro' });
       }
-      pdf_file = newPdf;
     }
 
     const { rows: updatedRows } = await pool.query(
@@ -120,11 +157,16 @@ router.put('/update/:id', upload.fields([{ name: 'image' }, { name: 'pdf_file' }
         parsedHighlights,
         image,
         pdf_file,
-        id
+        bookId
       ]
     );
 
-    res.status(200).json({ message: 'Book updated successfully', book: updatedRows[0] });
+    // Format media URLs in response
+    let updatedBook = updatedRows[0];
+    updatedBook.image = formatMediaUrl(updatedBook.image);
+    updatedBook.pdf_file = formatMediaUrl(updatedBook.pdf_file);
+
+    res.status(200).json({ message: 'Book updated successfully', book: updatedBook });
   } catch (err) {
     console.error('Error while updating book:', err);
     res.status(500).json({ error: err.message });
@@ -134,32 +176,31 @@ router.put('/update/:id', upload.fields([{ name: 'image' }, { name: 'pdf_file' }
 // ---------- DELETE (By ID)
 router.delete('/delete/:id', async (req, res) => {
   const { id } = req.params;
-  if (!isUuid(id)) return res.status(400).json({ message: 'Invalid book id' });
+  const bookId = parseInt(id);
+  if (isNaN(bookId) || bookId <= 0) return res.status(400).json({ message: 'Invalid book id' });
 
   const client = await pool.connect(); // <-- use pool.connect()
   try {
     await client.query('BEGIN');
 
-    const { rows } = await client.query('SELECT * FROM ebooks WHERE id = $1', [id]);
+    const { rows } = await client.query('SELECT * FROM ebooks WHERE id = $1', [bookId]);
     if (rows.length === 0) {
       await client.query('ROLLBACK');
       return res.status(404).json({ message: 'Book not found' });
     }
     const book = rows[0];
 
-    const imagePath = path.join(uploadPath, book.image || '');
-    const pdfPath = path.join(uploadPath, book.pdf_file || '');
-
-    await client.query('DELETE FROM ebooks WHERE id = $1', [id]);
+    await client.query('DELETE FROM ebooks WHERE id = $1', [bookId]);
     await client.query('COMMIT');
 
-    if (book.image && fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
-    if (book.pdf_file && fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
+    // Note: Since we're now storing URLs instead of local filenames,
+    // we don't need to delete local files anymore
+    // The media service handles file management
 
-    res.json({ message: 'Deleted successfully including files' });
+    res.json({ message: 'Deleted successfully' });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error('Error deleting book and files:', err);
+    console.error('Error deleting book:', err);
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
@@ -171,13 +212,14 @@ router.post('/download/:id', async (req, res) => {
   const { id } = req.params;
   const { username, email, phone } = req.body;
 
-  if (!isUuid(id)) return res.status(400).json({ message: 'Invalid book id' });
+  const bookId = parseInt(id);
+  if (isNaN(bookId) || bookId <= 0) return res.status(400).json({ message: 'Invalid book id' });
   if (!username || !phone) {
     return res.status(400).json({ message: 'username and phone are required' });
   }
 
   try {
-    const { rows: books } = await pool.query('SELECT * FROM ebooks WHERE id = $1', [id]);
+    const { rows: books } = await pool.query('SELECT * FROM ebooks WHERE id = $1', [bookId]);
     if (books.length === 0) {
       return res.status(404).json({ message: 'Book not found' });
     }
@@ -187,12 +229,12 @@ router.post('/download/:id', async (req, res) => {
       await pool.query(
         `INSERT INTO leads (book_id, username, email, phone)
          VALUES ($1, $2, $3, $4)`,
-        [id, username, email || null, phone]
+        [bookId, username, email || null, phone]
       );
 
       return res.status(201).json({
         message: 'Lead saved successfully',
-        pdfUrl: book.pdf_file
+        pdfUrl: formatMediaUrl(book.pdf_file)
       });
     } catch (e) {
       if (e.code === '23505') {
@@ -226,7 +268,18 @@ router.get('/lead/get', async (_req, res) => {
        ORDER BY l.created_at DESC`
     );
 
-    res.status(200).json(rows);
+    // Format media URLs for all leads
+    const leads = rows.map(lead => {
+      if (lead.book && lead.book.image) {
+        lead.book.image = formatMediaUrl(lead.book.image);
+      }
+      if (lead.book && lead.book.pdf_file) {
+        lead.book.pdf_file = formatMediaUrl(lead.book.pdf_file);
+      }
+      return lead;
+    });
+
+    res.status(200).json(leads);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching leads', error });
@@ -236,10 +289,11 @@ router.get('/lead/get', async (_req, res) => {
 // DELETE a lead by leadId
 router.delete('/lead/delete/:leadId', async (req, res) => {
   const { leadId } = req.params;
-  if (!isUuid(leadId)) return res.status(400).json({ message: 'Invalid leadId' });
+  const leadIdInt = parseInt(leadId);
+  if (isNaN(leadIdInt) || leadIdInt <= 0) return res.status(400).json({ message: 'Invalid leadId' });
 
   try {
-    const { rowCount } = await pool.query('DELETE FROM leads WHERE id = $1', [leadId]);
+    const { rowCount } = await pool.query('DELETE FROM leads WHERE id = $1', [leadIdInt]);
     if (rowCount === 0) {
       return res.status(404).json({ message: 'Lead not found' });
     }
@@ -249,6 +303,5 @@ router.delete('/lead/delete/:leadId', async (req, res) => {
     return res.status(500).json({ message: 'Something went wrong' });
   }
 });
-
 
 module.exports = router;

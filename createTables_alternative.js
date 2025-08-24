@@ -1,22 +1,8 @@
 const pool = require('./db');
+const { v4: uuidv4 } = require('uuid');
 
 async function createTables() {
   try {
-    // Try to create pgcrypto extension, fallback to uuid-ossp if needed
-    try {
-      await pool.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
-      console.log('pgcrypto extension created successfully');
-    } catch (pgcryptoError) {
-      console.log('pgcrypto extension failed, trying uuid-ossp:', pgcryptoError.message);
-      try {
-        await pool.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`);
-        console.log('uuid-ossp extension created successfully');
-      } catch (uuidError) {
-        console.log('Both extensions failed:', uuidError.message);
-        throw new Error('Neither pgcrypto nor uuid-ossp extension could be created');
-      }
-    }
-
     // Create users table with OTP support
     await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -163,30 +149,6 @@ async function createTables() {
       );
     `);
 
-    // Handle applicants status constraint update safely
-    try {
-      // First, update any existing data to match the new constraint
-      await pool.query(`
-        UPDATE applicants 
-        SET status = 'new' 
-        WHERE status NOT IN ('new', 'reviewed', 'shortlisted', 'rejected', 'Interviewed')
-      `);
-
-      // Drop the old constraint if it exists
-      await pool.query(`
-        ALTER TABLE applicants DROP CONSTRAINT IF EXISTS applicants_status_check;
-      `);
-
-      // Add the new constraint
-      await pool.query(`
-        ALTER TABLE applicants
-        ADD CONSTRAINT applicants_status_check 
-        CHECK (status IN ('new', 'reviewed', 'shortlisted', 'rejected', 'Interviewed'));
-      `);
-    } catch (constraintError) {
-      console.log('Constraint update skipped (table might not exist yet):', constraintError.message);
-    }
-
     console.log('Tables created successfully!');
   } catch (error) {
     console.error('Error creating tables:', error);
@@ -195,5 +157,4 @@ async function createTables() {
   }
 }
 
-createTables();
-
+createTables(); 

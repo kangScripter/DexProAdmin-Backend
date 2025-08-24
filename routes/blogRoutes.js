@@ -3,8 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const pool = require('../db');
 const path = require('path');
-const axios = require('axios');
-const FormData = require('form-data');
+const { formatMediaUrl, uploadSingleFile } = require('../utils/mediaUpload');
 
 // Configure multer for file upload
 const storage = multer.diskStorage({
@@ -17,14 +16,6 @@ const storage = multer.diskStorage({
   },
 });
 const upload = multer({ storage });
-
-// Helper to format media URLs
-function formatMediaUrl(url) {
-  if (!url) return url;
-  if (!url.startsWith('http')) return url;
-  if (url.startsWith('http://')) return url.replace('http://', 'https://');
-  return url;
-}
 
 /**
  * @route POST /api/blogs
@@ -58,14 +49,7 @@ router.post('/', upload.single('featured_image'), async (req, res) => {
     let featuredImageUrl = null;
     if (req.file) {
       try {
-        const form = new FormData();
-        form.append('file', require('fs').createReadStream(req.file.path), req.file.originalname);
-        const uploadRes = await axios.post('https://media.dexprosolutions.com/media/upload', form, {
-          headers: form.getHeaders(),
-        });
-        if (uploadRes.data && uploadRes.data.success && uploadRes.data.file && uploadRes.data.file.url) {
-          featuredImageUrl = uploadRes.data.file.url;
-        }
+        featuredImageUrl = await uploadSingleFile(req.file, 'featured_image');
       } catch (uploadErr) {
         console.error('Error uploading featured image:', uploadErr);
         return res.status(500).json({ success: false, error: 'Failed to upload featured image', company: 'DexPro' });
@@ -295,14 +279,7 @@ router.put('/:slug', upload.single('featured_image'), async (req, res) => {
   let featuredImageUrl = null;
   if (req.file) {
     try {
-      const form = new FormData();
-      form.append('file', require('fs').createReadStream(req.file.path), req.file.originalname);
-      const uploadRes = await axios.post('https://media.dexprosolutions.com/media/upload', form, {
-        headers: form.getHeaders(),
-      });
-      if (uploadRes.data && uploadRes.data.success && uploadRes.data.file && uploadRes.data.file.url) {
-        featuredImageUrl = uploadRes.data.file.url;
-      }
+      featuredImageUrl = await uploadSingleFile(req.file, 'featured_image');
     } catch (uploadErr) {
       console.error('Error uploading featured image:', uploadErr);
       return res.status(500).json({ success: false, error: 'Failed to upload featured image', company: 'DexPro' });
@@ -352,6 +329,174 @@ router.put('/:slug', upload.single('featured_image'), async (req, res) => {
   } catch (error) {
     console.error('Error updating blog:', error);
     res.status(500).json({ message: 'Failed to update blog' });
+  }
+});
+
+// Toggle featured status for a blog
+router.patch('/:slug/toggle-featured', async (req, res) => {
+  const { slug } = req.params;
+  
+  try {
+    // First, get the current blog to check its featured status
+    const getResult = await pool.query('SELECT id, is_featured FROM blogs WHERE slug = $1', [slug]);
+    
+    if (getResult.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Blog not found',
+        company: 'DexPro'
+      });
+    }
+
+    const blog = getResult.rows[0];
+    const newFeaturedStatus = !blog.is_featured; // Toggle the current status
+
+    // Update the featured status
+    const updateResult = await pool.query(
+      'UPDATE blogs SET is_featured = $1, updated_at = NOW() WHERE slug = $2 RETURNING *',
+      [newFeaturedStatus, slug]
+    );
+
+    if (updateResult.rows.length > 0) {
+      let updatedBlog = updateResult.rows[0];
+      updatedBlog.featured_image = formatMediaUrl(updatedBlog.featured_image);
+      
+      res.status(200).json({
+        success: true,
+        message: `Blog ${newFeaturedStatus ? 'marked as featured' : 'removed from featured'}`,
+        company: 'DexPro',
+        data: {
+          blog: updatedBlog,
+          is_featured: newFeaturedStatus,
+          action: newFeaturedStatus ? 'featured' : 'unfeatured'
+        }
+      });
+    } else {
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to update blog featured status',
+        company: 'DexPro'
+      });
+    }
+  } catch (error) {
+    console.error('Error toggling blog featured status:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while toggling featured status',
+      company: 'DexPro'
+    });
+  }
+});
+
+// Toggle pinned status for a blog
+router.patch('/:slug/toggle-pinned', async (req, res) => {
+  const { slug } = req.params;
+  
+  try {
+    // First, get the current blog to check its pinned status
+    const getResult = await pool.query('SELECT id, is_pinned FROM blogs WHERE slug = $1', [slug]);
+    
+    if (getResult.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Blog not found',
+        company: 'DexPro'
+      });
+    }
+
+    const blog = getResult.rows[0];
+    const newPinnedStatus = !blog.is_pinned; // Toggle the current status
+
+    // Update the pinned status
+    const updateResult = await pool.query(
+      'UPDATE blogs SET is_pinned = $1, updated_at = NOW() WHERE slug = $2 RETURNING *',
+      [newPinnedStatus, slug]
+    );
+
+    if (updateResult.rows.length > 0) {
+      let updatedBlog = updateResult.rows[0];
+      updatedBlog.featured_image = formatMediaUrl(updatedBlog.featured_image);
+      
+      res.status(200).json({
+        success: true,
+        message: `Blog ${newPinnedStatus ? 'pinned' : 'unpinned'}`,
+        company: 'DexPro',
+        data: {
+          blog: updatedBlog,
+          is_pinned: newPinnedStatus,
+          action: newPinnedStatus ? 'pinned' : 'unpinned'
+        }
+      });
+    } else {
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to update blog pinned status',
+        company: 'DexPro'
+      });
+    }
+  } catch (error) {
+    console.error('Error toggling blog pinned status:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while toggling pinned status',
+      company: 'DexPro'
+    });
+  }
+});
+
+// Toggle deleted status for a blog (soft delete/restore)
+router.patch('/:slug/toggle-deleted', async (req, res) => {
+  const { slug } = req.params;
+  
+  try {
+    // First, get the current blog to check its deleted status
+    const getResult = await pool.query('SELECT id, is_deleted FROM blogs WHERE slug = $1', [slug]);
+    
+    if (getResult.rows.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Blog not found',
+        company: 'DexPro'
+      });
+    }
+
+    const blog = getResult.rows[0];
+    const newDeletedStatus = !blog.is_deleted; // Toggle the current status
+
+    // Update the deleted status
+    const updateResult = await pool.query(
+      'UPDATE blogs SET is_deleted = $1, updated_at = NOW() WHERE slug = $2 RETURNING *',
+      [newDeletedStatus, slug]
+    );
+
+    if (updateResult.rows.length > 0) {
+      let updatedBlog = updateResult.rows[0];
+      updatedBlog.featured_image = formatMediaUrl(updatedBlog.featured_image);
+      
+      res.status(200).json({
+        success: true,
+        message: `Blog ${newDeletedStatus ? 'soft deleted' : 'restored'}`,
+        company: 'DexPro',
+        data: {
+          blog: updatedBlog,
+          is_deleted: newDeletedStatus,
+          action: newDeletedStatus ? 'deleted' : 'restored'
+        }
+      });
+    } else {
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to update blog deleted status',
+        company: 'DexPro'
+      });
+    }
+  } catch (error) {
+    console.error('Error toggling blog deleted status:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error while toggling deleted status',
+      company: 'DexPro'
+    });
   }
 });
 
